@@ -9,6 +9,7 @@ todo: initial enforcement
 todo: make sure we don't try to change the group to one we are not a part of
 todo: prefer the var run log if writable
 todo: fix the logging
+todo: add options for log file and pid file
 """
 
 usage = """
@@ -147,6 +148,12 @@ if __name__ == "__main__":
                 logging.error(errormsg)
                 exit(errormsg)
 
+        # make sure we are allowed to set that particular uid
+        if userid and userid != os.getuid() and os.getuid() != 0:
+            errormsg = "we are not allowed to change the ownership of a file to the user %s" % options.user
+            logging.error(errormsg)
+            exit(errormsg)
+
         # convert the group to gid
         try:
             if options.group:
@@ -158,6 +165,13 @@ if __name__ == "__main__":
                 errormsg = "there is no group named %s on this system" % options.group
                 logging.error(errormsg)
                 exit(errormsg)
+
+        # make sure the specified group is ok
+        group_membership = (grp.getgrnam(x).gr_gid for x in subprocess.Popen(["groups"], stdout = subprocess.PIPE).communicate()[0].split())
+        if groupid and os.getuid() != 0 and (groupid not in group_membership):
+            errormsg = "we cannot change the group of the file to %s since we are not root and we are not part of the group in question" % options.group
+            logging.error(errormsg)
+            exit(errormsg)
 
         try:
             if options.file_permissions and options.dir_permissions:
