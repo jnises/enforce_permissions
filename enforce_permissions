@@ -4,6 +4,11 @@
 enforce_permissions
 
 author: Joel Nises
+
+todo: initial enforcement
+todo: make sure we don't try to change the group to one we are not a part of
+todo: prefer the var run log if writable
+todo: fix the logging
 """
 
 usage = """
@@ -81,7 +86,7 @@ class EnforceGroupHandler(pyinotify.ProcessEvent):
                     logging.debug("group set for file %s" % path)
                     os.chown(path, -1, self.group)
 
-            mode = stat.st_mode
+            mode = s.st_mode
 
             if stat.S_ISDIR(mode):
                 if self.dirPermissions and mode & permissionMask != self.dirPermissions:
@@ -168,16 +173,18 @@ if __name__ == "__main__":
             exit(errormsg)
 
         wm = pyinotify.WatchManager()
-        notifier = pyinotify.Notifier(wm, EnforceGroupHandler(userid,
-                                                              groupid,
-                                                              file_permissions,
-                                                              dir_permissions))
+        notifier = pyinotify.Notifier(wm, EnforceGroupHandler(user = userid,
+                                                              group = groupid,
+                                                              filePermissions = file_permissions,
+                                                              dirPermissions = dir_permissions))
 
         for filename in args:
+            logging.debug("adding watch for file %s"%filename)
             wm.add_watch(filename, pyinotify.IN_CREATE | pyinotify.IN_ATTRIB, rec = True, auto_add = True)
 
         notifier.loop(daemonize = True, 
-                      pid_file = pidfile, force_kill = True)
+                      pid_file = pidfile, force_kill = True,
+                      stdout = logfile, stderr = logfile)
 
     except Exception as e:
         logging.error(e)
