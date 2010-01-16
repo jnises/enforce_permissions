@@ -26,13 +26,13 @@ logfile = "/tmp/enforce_permissions.log"
 
 import optparse
 import pyinotify
-import functools
 import os
 import logging
 import stat
 import pwd
 import grp
 import sys
+import subprocess
 
 permissionMask = stat.S_IRWXU | stat.S_IRWXG | stat.S_IRWXO
 
