@@ -89,7 +89,21 @@ def setPermissionsForFile(path, user, group, filePermissions, dirPermissions):
     else:
         logging.warning("not allowed to modify the permissions of that file")
 
-def initialEnforce(path, user, group, filePermission,
+def writeAccess(path):
+    """
+    check if a location is writable
+    """
+
+    try:
+        f = open(path, "a")
+        f.close()
+        return True
+    except IOError:
+        pass
+
+    return False
+
+def initialEnforce(path, user, group, filePermissions,
                    dirPermissions, enforceRoot = True):
     """
     walk the filesystem and set all the permissions
@@ -100,10 +114,10 @@ def initialEnforce(path, user, group, filePermission,
             setPermissionsForFile(root, user, group, filePermissions, dirPermissions)
         else:
             for d in dirs:
-                setPermissionsForFile(d, user, group, filePermissions, dirPermissions)
+                setPermissionsForFile(os.path.join(root, d), user, group, filePermissions, dirPermissions)
 
         for f in files:
-            setPermissionsForFile(f, user, group, filePermissions, dirPermissions)
+            setPermissionsForFile(os.path.join(root, f), user, group, filePermissions, dirPermissions)
 
 class EnforceGroupHandler(pyinotify.ProcessEvent):
     def my_init(self, user = None, group = None,
@@ -151,16 +165,16 @@ if __name__ == "__main__":
 
         # set up the logfile
         if options.logfile:
-            if os.access(p.logfile, os.W_OK):
+            if writeAccess(options.logfile):
                 logfile = options.logfile
             else:
                 exit("the logfile %s is not writable" % options.logfile)
         else:
-            if os.access(prilogfile, os.W_OK):
+            if writeAccess(prilogfile):
                 sys.stderr.write("using %s as logfile\n" % prilogfile)
                 sys.stderr.flush()
                 logfile = prilogfile
-            elif os.access(publogfile, os.W_OK):
+            elif writeAccess(publogfile):
                 sys.stderr.write("%s not writable, using %s as logfile\n" % (prilogfile, publogfile))
                 sys.stderr.flush()
                 logfile = publogfile
@@ -173,17 +187,17 @@ if __name__ == "__main__":
 
         # set up the pidfile
         if options.pidfile:
-            if os.access(p.pidfile, os.W_OK):
+            if writeAccess(options.pidfile):
                 pidfile = options.pidfile
             else:
                 errormsg = "the pidfile %s is not writable" % options.pidfile
                 logging.error(errormsg)
                 exit(errormsg)
         else:
-            if os.access(pripidfile, os.W_OK):
+            if writeAccess(pripidfile):
                 logging.debug("using %s as pidfile\n" % pripidfile)
                 pidfile = pripidfile
-            elif os.access(pubpidfile, os.W_OK):
+            elif writeAccess(pubpidfile):
                 logging.debug("%s not writable, using %s as pidfile\n" % (pripidfile, pubpidfile))
                 pidfile = pubpidfile
             else:
@@ -260,7 +274,7 @@ if __name__ == "__main__":
 
         for filename in args:
             logging.debug("enforcing initial permissions for %s" % filename)
-            initialEnforce(filename, user, group, filePermissions, dirPermissions)
+            initialEnforce(filename, userid, groupid, file_permissions, dir_permissions)
             
             logging.debug("adding watch for file %s"%filename)
             wm.add_watch(filename, pyinotify.IN_CREATE | pyinotify.IN_ATTRIB, rec = True, auto_add = True)
