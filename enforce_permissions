@@ -132,8 +132,10 @@ class EnforceGroupHandler(pyinotify.ProcessEvent):
         """
         change anything that doesn't match
         """
+
+        logging.debug("event for %s occured" % event.pathname)
         
-        setPermissionsForFile(event.path, self.user, self.group, self.filePermissions, self.dirPermissions)
+        setPermissionsForFile(event.pathname, self.user, self.group, self.filePermissions, self.dirPermissions)
             
     
 if __name__ == "__main__":
@@ -228,9 +230,9 @@ if __name__ == "__main__":
                 logging.error(errormsg)
                 exit(errormsg)
 
-        # make sure we are allowed to set that particular uid
-        if userid and userid != os.getuid() and os.getuid() != 0:
-            errormsg = "we are not allowed to change the ownership of a file to the user %s" % options.user
+        # we are only allowed to change uid if we are root
+        if userid and os.getuid() != 0:
+            errormsg = "not root, cannot change the ownership of a file"
             logging.error(errormsg)
             exit(errormsg)
 
@@ -277,7 +279,7 @@ if __name__ == "__main__":
             initialEnforce(filename, userid, groupid, file_permissions, dir_permissions)
             
             logging.debug("adding watch for file %s"%filename)
-            wm.add_watch(filename, pyinotify.IN_CREATE | pyinotify.IN_ATTRIB, rec = True, auto_add = True)
+            wm.add_watch(filename, pyinotify.IN_CREATE | pyinotify.IN_ATTRIB | pyinotify.IN_MOVED_TO, rec = True, auto_add = True)
 
         notifier.loop(daemonize = True, 
                       pid_file = pidfile, force_kill = True,
@@ -286,4 +288,6 @@ if __name__ == "__main__":
     except Exception, e:
         logging.error(e)
         raise
+    finally:
+        logging.info("watch setup end")
         
