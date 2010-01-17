@@ -150,11 +150,11 @@ if __name__ == "__main__":
         (options, args) = p.parse_args()
 
         # set up the logfile
-        if p.logfile:
+        if options.logfile:
             if os.access(p.logfile, os.W_OK):
-                logfile = p.logfile
+                logfile = options.logfile
             else:
-                exit("the logfile %s is not writable" % p.logfile)
+                exit("the logfile %s is not writable" % options.logfile)
         else:
             if os.access(prilogfile, os.W_OK):
                 sys.stderr.write("using %s as logfile\n" % prilogfile)
@@ -172,11 +172,11 @@ if __name__ == "__main__":
         logging.info("Enforce watch started")
 
         # set up the pidfile
-        if p.pidfile:
+        if options.pidfile:
             if os.access(p.pidfile, os.W_OK):
-                pidfile = p.pidfile
+                pidfile = options.pidfile
             else:
-                errormsg = "the pidfile %s is not writable" % p.pidfile
+                errormsg = "the pidfile %s is not writable" % options.pidfile
                 logging.error(errormsg)
                 exit(errormsg)
         else:
