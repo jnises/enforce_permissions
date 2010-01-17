@@ -5,11 +5,8 @@ enforce_permissions
 
 author: Joel Nises
 
-todo: initial enforcement
-todo: make sure we don't try to change the group to one we are not a part of
-todo: prefer the var run log if writable
 todo: fix the logging
-todo: add options for log file and pid file
+todo: add some way to specify a mask for the permissions we which to change
 """
 
 usage = """
@@ -18,11 +15,11 @@ Usage: %prog [options] <directory>
 Enforce permissions using inotify events.
 """
 
-#pidfile = "/var/run/enforce_permissions.pid"
-#logfile = "/var/log/enforce_permissions.log"
+pripidfile = "/var/run/enforce_permissions.pid"
+prilogfile = "/var/log/enforce_permissions.log"
 
-pidfile = "/tmp/enforce_permissions.pid"
-logfile = "/tmp/enforce_permissions.log"
+pubpidfile = "/tmp/enforce_permissions.pid"
+publogfile = "/tmp/enforce_permissions.log"
 
 import optparse
 import pyinotify
@@ -56,6 +53,58 @@ def octalPermissionToMode(perm):
         (stat.S_IWOTH if operm & 2 != 0 else 0) | \
         (stat.S_IXOTH if operm & 1 != 0 else 0)
 
+def setPermissionsForFile(path, user, group, filePermissions, dirPermissions):
+    s = os.stat(path)
+
+    # First make sure we are root, or own the file. If we aren't
+    # root, the requested uid needs to either be unset or the same
+    # as the file
+    if os.geteuid() == 0 or (s.st_uid == os.getuid() and (not user or user == s.st_uid)): 
+        if user:
+            if s.st_uid != user:
+                logging.debug("user set for file %s" % path)
+                os.chown(path, user, -1)
+
+        if group:
+            if s.st_gid != group:
+                logging.debug("group set for file %s" % path)
+                os.chown(path, -1, group)
+
+        mode = s.st_mode
+
+        if dirPermissions and filePermissions:
+            if stat.S_ISDIR(mode):
+                dstmode = dirPermissions
+            else:
+                dstmode = filePermissions
+
+            # or in the part of the original mask that doesn't
+            # involve permissions
+            dstmode |= mode & ~permissionMask
+
+            if dstmode != mode:
+                logging.debug("permissions set for file %s" % path)
+                os.chmod(path, dstmode)
+
+    else:
+        logging.warning("not allowed to modify the permissions of that file")
+
+def initialEnforce(path, user, group, filePermission,
+                   dirPermissions, enforceRoot = True):
+    """
+    walk the filesystem and set all the permissions
+    """
+    
+    for root, dirs, files in os.walk(path):
+        if enforceRoot:
+            setPermissionsForFile(root, user, group, filePermissions, dirPermissions)
+        else:
+            for d in dirs:
+                setPermissionsForFile(d, user, group, filePermissions, dirPermissions)
+
+        for f in files:
+            setPermissionsForFile(f, user, group, filePermissions, dirPermissions)
+
 class EnforceGroupHandler(pyinotify.ProcessEvent):
     def my_init(self, user = None, group = None,
                 filePermissions = None, dirPermissions = None):
@@ -69,46 +118,11 @@ class EnforceGroupHandler(pyinotify.ProcessEvent):
         """
         change anything that doesn't match
         """
-
-        path = event.pathname
-        s = os.stat(path)
-
-        # First make sure we are root, or own the file. If we aren't
-        # root, the requested uid needs to either be unset or the same
-        # as the file
-        if os.geteuid() == 0 or (s.st_uid == os.getuid() and (not self.user or self.user == s.st_uid)): 
-            if self.user:
-                if s.st_uid != self.user:
-                    logging.debug("user set for file %s" % path)
-                    os.chown(path, self.user, -1)
-
-            if self.group:
-                if s.st_gid != self.group:
-                    logging.debug("group set for file %s" % path)
-                    os.chown(path, -1, self.group)
-
-            mode = s.st_mode
-
-            if stat.S_ISDIR(mode):
-                if self.dirPermissions and mode & permissionMask != self.dirPermissions:
-                    logging.debug("permissions set for directory %s" % path)
-                    os.chmod(path, self.dirPermissions)
-
-            else:
-                if self.filePermissions and mode & permissionMask != self.filePermissions:
-                    logging.debug("permissions set for file %s" % path)
-                    os.chmod(path, self.filePermissions)
-
-        else:
-            logging.warning("not allowed to modify the permissions of that file")
-
+        
+        setPermissionsForFile(event.path, self.user, self.group, self.filePermissions, self.dirPermissions)
             
     
 if __name__ == "__main__":
-    logging.basicConfig(filename = logfile, level = logging.DEBUG)
-
-    logging.info("Enforce watch started")
-
     try:
         p = optparse.OptionParser(usage = usage)
         p.add_option("-f", "--file", dest = "file_permissions", 
@@ -123,8 +137,60 @@ if __name__ == "__main__":
         p.add_option("-g", "--group", dest = "group", 
                      help = "The group to enforce", 
                      action = "store", type = "string")
+        # p.add_option("-r", "--root", dest = "enforce_root",
+        #              help = "If set don't enforce the permissions for the files specified on the command line, just their children"
+        #              action = "store_false",)
+        p.add_option("-p", "--pidfile", dest = "pidfile",
+                     help = "the pidfile",
+                     action = "store", type = "string")
+        p.add_option("-l", "--logfile", dest = "logfile",
+                     help = "the logfile",
+                     action = "store", type = "string")
         
         (options, args) = p.parse_args()
+
+        # set up the logfile
+        if p.logfile:
+            if os.access(p.logfile, os.W_OK):
+                logfile = p.logfile
+            else:
+                exit("the logfile %s is not writable" % p.logfile)
+        else:
+            if os.access(prilogfile, os.W_OK):
+                sys.stderr.write("using %s as logfile\n" % prilogfile)
+                sys.stderr.flush()
+                logfile = prilogfile
+            elif os.access(publogfile, os.W_OK):
+                sys.stderr.write("%s not writable, using %s as logfile\n" % (prilogfile, publogfile))
+                sys.stderr.flush()
+                logfile = publogfile
+            else:
+                exit("no writable locations found for logfile")
+
+        logging.basicConfig(filename = logfile, level = logging.DEBUG)
+
+        logging.info("Enforce watch started")
+
+        # set up the pidfile
+        if p.pidfile:
+            if os.access(p.pidfile, os.W_OK):
+                pidfile = p.pidfile
+            else:
+                errormsg = "the pidfile %s is not writable" % p.pidfile
+                logging.error(errormsg)
+                exit(errormsg)
+        else:
+            if os.access(pripidfile, os.W_OK):
+                logging.debug("using %s as pidfile\n" % pripidfile)
+                pidfile = pripidfile
+            elif os.access(pubpidfile, os.W_OK):
+                logging.debug("%s not writable, using %s as pidfile\n" % (pripidfile, pubpidfile))
+                pidfile = pubpidfile
+            else:
+                errormsg = "no writable locations found for pidfile"
+                logging.error(errormsg)
+                exit(errormsg)
+            
 
         userid = None
         groupid = None
@@ -193,6 +259,9 @@ if __name__ == "__main__":
                                                               dirPermissions = dir_permissions))
 
         for filename in args:
+            logging.debug("enforcing initial permissions for %s" % filename)
+            initialEnforce(filename, user, group, filePermissions, dirPermissions)
+            
             logging.debug("adding watch for file %s"%filename)
             wm.add_watch(filename, pyinotify.IN_CREATE | pyinotify.IN_ATTRIB, rec = True, auto_add = True)
 
