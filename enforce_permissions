@@ -283,7 +283,7 @@ if __name__ == "__main__":
                       pid_file = pidfile, force_kill = True,
                       stdout = logfile, stderr = logfile)
 
-    except Exception as e:
+    except Exception, e:
         logging.error(e)
         raise
         
