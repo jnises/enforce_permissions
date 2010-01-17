@@ -54,40 +54,44 @@ def octalPermissionToMode(perm):
         (stat.S_IXOTH if operm & 1 != 0 else 0)
 
 def setPermissionsForFile(path, user, group, filePermissions, dirPermissions):
-    s = os.stat(path)
+    try:
+        s = os.stat(path)
 
-    # First make sure we are root, or own the file. If we aren't
-    # root, the requested uid needs to either be unset or the same
-    # as the file
-    if os.geteuid() == 0 or (s.st_uid == os.getuid() and (not user or user == s.st_uid)): 
-        if user:
-            if s.st_uid != user:
-                logging.debug("user set for file %s" % path)
-                os.chown(path, user, -1)
+        # First make sure we are root, or own the file. If we aren't
+        # root, the requested uid needs to either be unset or the same
+        # as the file
+        if os.geteuid() == 0 or (s.st_uid == os.getuid() and (not user or user == s.st_uid)): 
+            if user:
+                if s.st_uid != user:
+                    logging.debug("user set for file %s" % path)
+                    os.chown(path, user, -1)
 
-        if group:
-            if s.st_gid != group:
-                logging.debug("group set for file %s" % path)
-                os.chown(path, -1, group)
+            if group:
+                if s.st_gid != group:
+                    logging.debug("group set for file %s" % path)
+                    os.chown(path, -1, group)
 
-        mode = s.st_mode
+            mode = s.st_mode
 
-        if dirPermissions and filePermissions:
-            if stat.S_ISDIR(mode):
-                dstmode = dirPermissions
-            else:
-                dstmode = filePermissions
+            if dirPermissions and filePermissions:
+                if stat.S_ISDIR(mode):
+                    dstmode = dirPermissions
+                else:
+                    dstmode = filePermissions
 
-            # or in the part of the original mask that doesn't
-            # involve permissions
-            dstmode |= mode & ~permissionMask
+                # or in the part of the original mask that doesn't
+                # involve permissions
+                dstmode |= mode & ~permissionMask
 
-            if dstmode != mode:
-                logging.debug("permissions set for file %s" % path)
-                os.chmod(path, dstmode)
+                if dstmode != mode:
+                    logging.debug("permissions set for file %s" % path)
+                    os.chmod(path, dstmode)
 
-    else:
-        logging.warning("not allowed to modify the permissions of that file")
+        else:
+            logging.warning("not allowed to modify the permissions of that file")
+
+    except OSError:
+        logging.warning("%s doesn't exist while trying to change its permissions" % path)
 
 def writeAccess(path):
     """
