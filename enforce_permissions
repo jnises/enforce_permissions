@@ -279,11 +279,11 @@ if __name__ == "__main__":
                                                               dirPermissions = dir_permissions))
 
         for filename in args:
-            logging.debug("enforcing initial permissions for %s" % filename)
-            initialEnforce(filename, userid, groupid, file_permissions, dir_permissions)
-            
             logging.debug("adding watch for file %s"%filename)
             wm.add_watch(filename, pyinotify.IN_CREATE | pyinotify.IN_ATTRIB | pyinotify.IN_MOVED_TO, rec = True, auto_add = True)
+
+            logging.debug("enforcing initial permissions for %s" % filename)
+            initialEnforce(filename, userid, groupid, file_permissions, dir_permissions)
 
         notifier.loop(daemonize = True, 
                       pid_file = pidfile, force_kill = True,
