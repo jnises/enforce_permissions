@@ -1,0 +1,4 @@
+Python script that changes permissions of files and directories.
+The permission change is triggered by inofity events.
+
+Useful for making sure the files in a certain directory are all owned by a specific user, no matter who created them.
